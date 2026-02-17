@@ -1,0 +1,61 @@
+---
+title: "SMGT Capstone"
+author: "Sean McGarry"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+#############################################
+# NFL Betting Data: 2015–2025
+# Source: nflfastR
+#############################################
+#############################################
+# Load NFL schedules with betting lines
+#############################################
+
+seasons <- 2015:2025
+
+nfl_games <- map_dfr(
+  seasons,
+  ~ fast_scraper_schedules(seasons = .x)
+)
+
+#############################################
+# Clean and select relevant variables
+#############################################
+
+nfl_games_clean <- nfl_games %>%
+  mutate(
+    home_margin = home_score - away_score,
+    away_margin = away_score - home_score
+  )
+
+#############################################
+# Create betting outcome variables
+#############################################
+
+nfl_games_clean <- nfl_games_clean %>%
+  mutate(
+    home_cover = ifelse(home_margin > spread_line, 1, 0),
+    away_cover = ifelse(away_margin > -spread_line, 1, 0)
+  )
+
+#############################################
+# Create previous-game blowout indicator
+#############################################
+
+nfl_games_clean <- nfl_games_clean %>%
+  group_by(home_team) %>%
+  arrange(gameday) %>%
+  mutate(
+    prev_margin = lag(home_margin),
+    blowout_prev = ifelse(prev_margin >= 14, 1, 0)
+  ) %>%
+  ungroup()
+
+nfl_games_clean <- nfl_games_clean %>%
+  filter(!is.na(spread_line),
+         game_type == "REG")
+
+```

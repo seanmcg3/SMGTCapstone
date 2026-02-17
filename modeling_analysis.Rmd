@@ -1,0 +1,119 @@
+---
+title: "Modeling"
+author: "Sean McGarry"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# home cover after blowout
+```{r}
+library(dplyr)
+
+# Logistic regression
+model_cover <- glm(
+  home_cover ~ blowout_prev + spread_line + home_rest + away_rest + div_game,
+  data = nfl_games_clean,
+  family = binomial
+)
+
+summary(model_cover)
+```
+
+The coefficient is negative, which is directionally consistent with overreaction.
+
+But it is tiny and statistically insignificant.
+
+Economically, −0.033 on the log-odds scale is negligible.
+
+There is no statistical evidence that teams coming off blowouts cover less often.
+
+If overreaction exists, it is not detectable in this specification.
+
+# checking for spread error
+```{r}
+nfl_games_clean2 <- nfl_games_clean %>%
+  mutate(spread_error = home_margin - spread_line)
+
+model_error <- lm(
+  spread_error ~ blowout_prev + spread_line + home_rest + away_rest + div_game,
+  data = nfl_games_clean2
+)
+
+summary(model_error)
+
+```
+
+
+Again, sign is consistent with mild overpricing.
+
+But effect is not statistically significant.
+
+R² ≈ 0.0016 → model explains essentially nothing.
+
+No evidence that spreads are inflated following blowouts.
+
+# recency bias
+
+```{r}
+nfl_games_clean3 <- nfl_games_clean2 %>%
+  mutate(prev_margin_abs = abs(prev_margin))
+
+model_recency <- lm(
+  spread_line ~ prev_margin + home_rest + away_rest + div_game,
+  data = nfl_games_clean3
+)
+
+summary(model_recency)
+```
+For every 1-point increase in previous margin, the next week’s spread moves ~0.136 points.
+
+Sportsbooks do strongly incorporate recent margin of victory into next week’s line, but this does NOT automatically mean overreaction.
+
+It just means recency matters likely not excessive.
+# primetime
+```{r}
+nfl_games_clean4 <- nfl_games_clean3 %>%
+  mutate(primetime = ifelse(weekday %in% c("Sunday", "Monday", "Thursday"), 1, 0))
+
+model_interaction <- glm(
+  home_cover ~ blowout_prev * primetime + spread_line,
+  data = nfl_games_clean4,
+  family = binomial
+)
+
+summary(model_interaction)
+```
+ no interaction
+ 
+# betting strategy  
+```{r}
+nfl_games_clean4 <- nfl_games_clean4 %>%
+  mutate(
+    fade_blowout = ifelse(blowout_prev == 1, 1, 0),
+    fade_profit = ifelse(fade_blowout == 1 & home_cover == 0, 0.909,
+                  ifelse(fade_blowout == 1 & home_cover == 1, -1, 0))
+  )
+
+mean(nfl_games_clean4$fade_profit, na.rm = TRUE)
+```
+no statistical edge
+
+# analyze over the course of the season
+
+```{r}
+model_season <- glm(
+  home_cover ~ blowout_prev * week + spread_line,
+  data = nfl_games_clean4,
+  family = binomial
+)
+
+summary(model_season)
+```
+
+no apparent sharpening as season progresses
+
+
+
+# results writeup
+
+While recent margin of victory strongly predicts subsequent point spreads, we find no statistically significant evidence that teams coming off large-margin victories are systematically overpriced. Logistic and linear regression models show no meaningful decrease in cover probability or spread error following blowout wins. Furthermore, simple betting strategies that fade teams after blowout victories do not generate economically significant returns. These findings suggest that NFL betting markets efficiently incorporate recent performance without systematic overreaction.
