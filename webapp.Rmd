@@ -1,0 +1,329 @@
+---
+title: "Web App"
+author: "Sean McGarry"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+library(shiny)
+library(dplyr)
+```
+# ui
+```{r}
+ui <- fluidPage(
+  titlePanel("NFL Blowout Spread Predictor"),
+  
+  fluidRow(
+    column(12,
+      div(style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;",
+        p(style = "color: gray; margin: 0;", textOutput("game_label", inline = TRUE)),
+        div(
+          span("Score: ", style = "color: gray;"),
+          strong(textOutput("score_display", inline = TRUE))
+        )
+      )
+    )
+  ),
+  
+  fluidRow(
+    column(5,
+      uiOutput("away_card")
+    ),
+    column(2,
+      div(style = "text-align: center; padding-top: 50px;",
+        h4("vs", style = "color: gray;")
+      )
+    ),
+    column(5,
+      uiOutput("home_card")
+    )
+  ),
+  
+  br(),
+  
+  fluidRow(
+    column(12,
+      uiOutput("spread_bar")
+    )
+  ),
+  
+  br(),
+  
+  fluidRow(
+    column(12,
+      uiOutput("pick_buttons")
+    )
+  ),
+  
+  br(),
+  
+  fluidRow(
+    column(12,
+      uiOutput("result_ui")
+    )
+  ),
+  
+  hr(),
+  
+  fluidRow(
+    column(4, actionButton("btn_prev", "← Prev", class = "btn btn-outline-secondary")),
+    column(4, p(textOutput("prog_text"), style = "text-align: center; color: gray; padding-top: 6px;")),
+    column(4, div(style = "text-align: right;", actionButton("btn_next", "Next →", class = "btn btn-outline-secondary")))
+  )
+)
+
+server <- function(input, output, session) {
+  
+  rv <- reactiveValues(
+    games = NULL,
+    idx = 1,
+    picks = list(),
+    correct = 0,
+    total = 0
+  )
+  
+  # Load on startup
+  observe({
+  blowout_games <- nfl_games_clean2 %>%
+    filter(
+      home_blowout_win_prev == 1 | home_blowout_loss_prev == 1 |
+      away_blowout_win_prev == 1 | away_blowout_loss_prev == 1
+    ) %>%
+    slice_sample(prop = 1)
+  rv$games <- blowout_games
+    }) %>% bindEvent(TRUE)
+  
+  nfl_logos <- c(
+  ARI = "https://a.espncdn.com/i/teamlogos/nfl/500/ari.png",
+  ATL = "https://a.espncdn.com/i/teamlogos/nfl/500/atl.png",
+  BAL = "https://a.espncdn.com/i/teamlogos/nfl/500/bal.png",
+  BUF = "https://a.espncdn.com/i/teamlogos/nfl/500/buf.png",
+  CAR = "https://a.espncdn.com/i/teamlogos/nfl/500/car.png",
+  CHI = "https://a.espncdn.com/i/teamlogos/nfl/500/chi.png",
+  CIN = "https://a.espncdn.com/i/teamlogos/nfl/500/cin.png",
+  CLE = "https://a.espncdn.com/i/teamlogos/nfl/500/cle.png",
+  DAL = "https://a.espncdn.com/i/teamlogos/nfl/500/dal.png",
+  DEN = "https://a.espncdn.com/i/teamlogos/nfl/500/den.png",
+  DET = "https://a.espncdn.com/i/teamlogos/nfl/500/det.png",
+  GB  = "https://a.espncdn.com/i/teamlogos/nfl/500/gb.png",
+  HOU = "https://a.espncdn.com/i/teamlogos/nfl/500/hou.png",
+  IND = "https://a.espncdn.com/i/teamlogos/nfl/500/ind.png",
+  JAX = "https://a.espncdn.com/i/teamlogos/nfl/500/jax.png",
+  KC  = "https://a.espncdn.com/i/teamlogos/nfl/500/kc.png",
+  LA  = "https://a.espncdn.com/i/teamlogos/nfl/500/lar.png",
+  LAC = "https://a.espncdn.com/i/teamlogos/nfl/500/lac.png",
+  SD =  "https://a.espncdn.com/i/teamlogos/nfl/500/lac.png",
+  LAR = "https://a.espncdn.com/i/teamlogos/nfl/500/lar.png",
+  LV  = "https://a.espncdn.com/i/teamlogos/nfl/500/lv.png",
+  MIA = "https://a.espncdn.com/i/teamlogos/nfl/500/mia.png",
+  MIN = "https://a.espncdn.com/i/teamlogos/nfl/500/min.png",
+  NE  = "https://a.espncdn.com/i/teamlogos/nfl/500/ne.png",
+  NO  = "https://a.espncdn.com/i/teamlogos/nfl/500/no.png",
+  NYG = "https://a.espncdn.com/i/teamlogos/nfl/500/nyg.png",
+  NYJ = "https://a.espncdn.com/i/teamlogos/nfl/500/nyj.png",
+  PHI = "https://a.espncdn.com/i/teamlogos/nfl/500/phi.png",
+  PIT = "https://a.espncdn.com/i/teamlogos/nfl/500/pit.png",
+  SEA = "https://a.espncdn.com/i/teamlogos/nfl/500/sea.png",
+  SF  = "https://a.espncdn.com/i/teamlogos/nfl/500/sf.png",
+  TB  = "https://a.espncdn.com/i/teamlogos/nfl/500/tb.png",
+  TEN = "https://a.espncdn.com/i/teamlogos/nfl/500/ten.png",
+  WAS = "https://a.espncdn.com/i/teamlogos/nfl/500/wsh.png"
+)
+  
+  get_tag <- function(blowout_win, blowout_loss, prev_margin) {
+    if (!is.na(blowout_win) && blowout_win == 1) return(list(label = "Blowout Win", color = "#28a745", bg = "#f0fff4"))
+    if (!is.na(blowout_loss) && blowout_loss == 1) return(list(label = "Blowout Loss", color = "#dc3545", bg = "#fff5f5"))
+    if (!is.na(prev_margin) && prev_margin > 0) return(list(label = "Win", color = "#17a2b8", bg = "#f0faff"))
+    if (!is.na(prev_margin) && prev_margin < 0) return(list(label = "Loss", color = "#fd7e14", bg = "#fff8f0"))
+    return(list(label = "No Data", color = "#6c757d", bg = "#f8f9fa"))
+  }
+  
+  fmt_margin <- function(m) {
+    if (is.na(m)) return("—")
+    if (m > 0) paste0("+", m) else as.character(m)
+  }
+  
+  fmt_odds <- function(o) {
+    if (is.na(o) || is.null(o)) return("—")
+    if (o > 0) paste0("+", o) else as.character(o)
+  }
+  
+ make_team_card <- function(abbr, side_label, blowout_win, blowout_loss, prev_margin,
+                            spread_odds, border_color = "#dee2e6") {
+  tag <- get_tag(blowout_win, blowout_loss, prev_margin)
+  logo_url <- nfl_logos[abbr]
+  
+  div(style = paste0("border: 2px solid ", border_color, "; border-radius: 10px; padding: 20px; height: 100%;"),
+    
+    # --- only this block changes ---
+    div(style = "display: flex; align-items: center; gap: 12px; margin-bottom: 12px;",
+      if (!is.na(logo_url)) {
+        tags$img(src = logo_url, style = "width: 52px; height: 52px; object-fit: contain;")
+      },
+      div(
+        h3(abbr, style = "margin: 0;"),
+        p(side_label, style = "color: gray; font-size: 13px; margin: 0;")
+      )
+    ),
+    # --- everything below stays exactly the same ---
+    
+    div(style = paste0("display: inline-block; background: ", tag$bg, "; color: ", tag$color,
+                       "; border: 1px solid ", tag$color, "; border-radius: 4px;",
+                       "font-size: 12px; font-weight: 600; padding: 3px 10px; margin-bottom: 14px;"),
+      tag$label
+    ),
+    
+    hr(style = "margin: 10px 0;"),
+    
+    div(style = "font-size: 13px;",
+      div(style = "display: flex; justify-content: space-between; margin-bottom: 6px;",
+        span("Prev week margin", style = "color: gray;"),
+        strong(fmt_margin(prev_margin))
+      ),
+      div(style = "display: flex; justify-content: space-between; margin-bottom: 6px;",
+        span("Spread odds", style = "color: gray;"),
+        strong(fmt_odds(spread_odds))
+      )
+    )
+  )
+}
+  
+  current_game <- reactive({
+    req(rv$games)
+    rv$games[rv$idx, ]
+  })
+  
+  output$game_label <- renderText({
+    req(rv$games)
+    paste0("Game ", rv$idx, " of ", nrow(rv$games))
+  })
+  
+  output$prog_text <- renderText({
+    req(rv$games)
+    paste0(rv$idx, " / ", nrow(rv$games))
+  })
+  
+  output$score_display <- renderText({
+    paste0(rv$correct, " / ", rv$total)
+  })
+  
+  output$away_card <- renderUI({
+    g <- current_game()
+    pick_made <- !is.null(rv$picks[[as.character(rv$idx)]])
+    border <- "#dee2e6"
+    if (pick_made) {
+      correct_side <- if (!is.na(g$home_cover) && g$home_cover == 1) "home" else "away"
+      if (correct_side == "away") border <- "#28a745"
+      if (rv$picks[[as.character(rv$idx)]] == "away" && correct_side != "away") border <- "#dc3545"
+    }
+    make_team_card(g$away_team, "Away", g$away_blowout_win_prev, g$away_blowout_loss_prev,
+                   g$prev_away_margin, g$away_spread_odds, border)
+  })
+  
+  output$home_card <- renderUI({
+    g <- current_game()
+    pick_made <- !is.null(rv$picks[[as.character(rv$idx)]])
+    border <- "#dee2e6"
+    if (pick_made) {
+      correct_side <- if (!is.na(g$home_cover) && g$home_cover == 1) "home" else "away"
+      if (correct_side == "home") border <- "#28a745"
+      if (rv$picks[[as.character(rv$idx)]] == "home" && correct_side != "home") border <- "#dc3545"
+    }
+    make_team_card(g$home_team, "Home", g$home_blowout_win_prev, g$home_blowout_loss_prev,
+                   g$prev_home_margin, g$home_spread_odds, border)
+  })
+  
+  output$spread_bar <- renderUI({
+  g <- current_game()
+  sl <- g$spread_line
+  favor_team <- if (sl > 0) g$home_team else if (sl < 0) g$away_team else "Pick 'em"
+  favor_amt <- if (sl == 0) "" else paste0(" -", abs(sl))
+  spread_str <- paste0(favor_team, favor_amt)
+
+  div(
+    p(format(as.Date(g$gameday), "%B %d, %Y"), style = "color: gray; font-size: 13px; margin-bottom: 8px;"),
+    div(style = "background: #f8f9fa; border-radius: 8px; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center;",
+      span("Spread:", style = "color: gray; font-size: 14px;"),
+      strong(spread_str, style = "font-size: 18px;"),
+      span("favored", style = "color: white; font-size: 14px;")
+    )
+  )
+})
+
+  
+  output$pick_buttons <- renderUI({
+    g <- current_game()
+    pick_made <- !is.null(rv$picks[[as.character(rv$idx)]])
+    
+    if (!pick_made) {
+      div(
+        p("Who covers the spread?", style = "color: gray; font-size: 13px; margin-bottom: 10px;"),
+        fluidRow(
+          column(6, actionButton("pick_away", paste(g$away_team, "covers"),
+                                 class = "btn btn-outline-primary btn-lg btn-block", style = "width: 100%;")),
+          column(6, actionButton("pick_home", paste(g$home_team, "covers"),
+                                 class = "btn btn-outline-primary btn-lg btn-block", style = "width: 100%;"))
+        )
+      )
+    }
+  })
+  
+  output$result_ui <- renderUI({
+    g <- current_game()
+    pick_made <- !is.null(rv$picks[[as.character(rv$idx)]])
+    if (!pick_made) return(NULL)
+    
+    current_pick <- rv$picks[[as.character(rv$idx)]]
+    correct_side <- if (!is.na(g$home_cover) && g$home_cover == 1) "home" else "away"
+    cover_team <- if (correct_side == "home") g$home_team else g$away_team
+    is_correct <- current_pick == correct_side
+    
+    score_str <- if (!is.na(g$away_score) && !is.na(g$home_score)) {
+      paste0("Final: ", g$away_team, " ", g$away_score, " — ", g$home_team, " ", g$home_score, ". ")
+    } else ""
+    
+    div(style = paste0("padding: 14px 18px; border-radius: 8px; border-left: 4px solid ",
+                       if (is_correct) "#28a745" else "#dc3545", ";",
+                       "background: ", if (is_correct) "#f0fff4" else "#fff5f5"),
+      strong(if (is_correct) "Correct! " else "Incorrect. "),
+      span(paste0(score_str, cover_team, " covered the spread."))
+    )
+  })
+  
+  observeEvent(input$pick_away, {
+    key <- as.character(rv$idx)
+    if (is.null(rv$picks[[key]])) {
+      rv$picks[[key]] <- "away"
+      rv$total <- rv$total + 1
+      g <- current_game()
+      correct_side <- if (!is.na(g$home_cover) && g$home_cover == 1) "home" else "away"
+      if (correct_side == "away") rv$correct <- rv$correct + 1
+    }
+  })
+  
+  observeEvent(input$pick_home, {
+    key <- as.character(rv$idx)
+    if (is.null(rv$picks[[key]])) {
+      rv$picks[[key]] <- "home"
+      rv$total <- rv$total + 1
+      g <- current_game()
+      correct_side <- if (!is.na(g$home_cover) && g$home_cover == 1) "home" else "away"
+      if (correct_side == "home") rv$correct <- rv$correct + 1
+    }
+  })
+  
+  observeEvent(input$btn_prev, {
+    if (rv$idx > 1) rv$idx <- rv$idx - 1
+  })
+  
+  observeEvent(input$btn_next, {
+    req(rv$games)
+    if (rv$idx < nrow(rv$games)) rv$idx <- rv$idx + 1
+  })
+}
+```
+# run app
+```{r}
+shinyApp(ui, server)
+```

@@ -1,0 +1,156 @@
+---
+title: "Modeling"
+author: "Sean McGarry"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# home cover
+
+```{r}
+library(dplyr)
+model_logit <- glm(
+  home_cover ~  home_blowout_win_prev +
+               home_blowout_loss_prev +
+               away_blowout_win_prev +
+               away_blowout_loss_prev +
+               spread_line +
+               home_rest +
+               away_rest +
+               div_game +
+               factor(season),
+  data = nfl_games_clean,
+  family = binomial
+)
+
+summary(model_logit)
+```
+
+NFL betting markets appear efficient with respect to extreme prior performance. While sportsbooks clearly incorporate information about recent games into point spreads, these adjustments do not lead to systematic overpricing or underpricing. Teams coming off true blowouts are no more or less likely to cover the spread in their next game.
+
+# checking for spread error
+
+```{r}
+nfl_games_clean2 <- nfl_games_clean %>%
+  mutate(spread_error = home_margin - spread_line)
+
+model_error <- lm(
+  spread_error ~  home_blowout_win_prev +
+               home_blowout_loss_prev +
+               away_blowout_win_prev +
+               away_blowout_loss_prev +
+                 spread_line +
+                 home_rest +
+                 away_rest +
+                 div_game +
+                 factor(season),
+  data = nfl_games_clean2
+)
+
+summary(model_error)
+
+
+```
+
+There is no evidence that teams coming off blowout wins or losses systematically outperform or underperform the betting spread in their subsequent game. The magnitude of spread errors appears largely random with respect to extreme prior performance. These results reinforce the conclusion that NFL betting markets efficiently incorporate recent performance information without creating predictable pricing errors.
+
+# recency bias
+
+```{r}
+model_spread <- lm(
+  spread_line ~  home_blowout_win_prev +
+               home_blowout_loss_prev +
+               away_blowout_win_prev +
+               away_blowout_loss_prev +
+                home_rest +
+                away_rest +
+                div_game +
+                factor(season),
+  data = nfl_games_clean2
+)
+
+summary(model_spread)
+
+```
+
+Your earlier models showed:
+
+Blowouts do NOT predict covering the spread
+
+Blowouts do NOT predict spread errors
+
+But this model shows:
+
+Blowouts DO significantly shift the next week's spread
+
+This creates an important insight:
+
+Sportsbooks react strongly to extreme performance, but the adjustments appear to be appropriately calibrated rather than excessive.
+
+In other words, markets update spreads after blowouts, but the adjustments do not lead to predictable mispricing.
+
+# account for team
+
+# make a random effects model instead
+
+```{r}
+
+model_re <- glmer(
+  home_cover ~ home_blowout_win_prev +
+               home_blowout_loss_prev +
+               away_blowout_win_prev +
+               away_blowout_loss_prev +
+               spread_line +
+               home_rest +
+               away_rest +
+               div_game +
+               factor(season) +
+               (1 | home_team) +
+               (1 | away_team),
+  data = nfl_games_clean2,
+  family = binomial
+)
+
+summary(model_re)
+```
+
+### 📊 Summary of Results
+
+* **No predictive power:** None of your variables (blowouts, rest, spread, divisional games) significantly predict whether the home team covers the spread.
+* **Team effects are minimal:**
+
+  * Home team variation ≈ 0 → no meaningful home-team-specific edge
+  * Away team variation is small → slight differences, but not impactful
+* **Model fit is weak:** The model is essentially performing no better than random guessing (~50/50).
+* **Convergence issue:** Likely due to the near-zero home team variance — suggests that effect should be removed.
+
+### 🧠 Bottom line:
+
+> There is **no evidence of exploitable inefficiencies** in your variables — the betting market appears **efficient**, already accounting for team strength and recent performance.
+
+
+# analyze over the course of the season
+
+```{r}
+model_season <- glm(
+  home_cover ~  home_blowout_win_prev * week +
+               home_blowout_loss_prev * week +
+               away_blowout_win_prev * week +
+               away_blowout_loss_prev * week + 
+                home_rest +
+               away_rest +
+               div_game +
+    spread_line,
+  data = nfl_games_clean,
+  family = binomial
+)
+
+summary(model_season)
+```
+
+There is weak evidence that away teams coming off a blowout win perform slightly better against the spread early in the season, but the effect declines with later weeks. Overall, previous blowouts provide little predictive value for covering the spread.
+
+# meeting notes
+
+Look at more than 1 game, previous 2-5 weeks some rolling performance vs spread How does the prediction market differ from traditional might reflect bias more Kalshi has good data to use Include these findings in a final report
+

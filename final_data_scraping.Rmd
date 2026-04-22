@@ -41,8 +41,8 @@ nfl_games_clean <- nfl_games %>%
 
 nfl_games_clean <- nfl_games_clean %>%
   mutate(
-    home_cover = ifelse(home_margin > spread_line, 1, 0),
-    away_cover = ifelse(away_margin > -spread_line, 1, 0)
+    home_cover = ifelse(home_margin - spread_line > 0, 1, 0),
+    away_cover = 1 - home_cover
   )
 
 #############################################
